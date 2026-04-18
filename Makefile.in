@@ -16,7 +16,7 @@ TEST_BINS = tests/test_hash tests/test_snapshot tests/test_diff
 all: $(BIN)
 
 $(BIN): $(OBJS)
-	$(CC) $(CFLAGS) -o $@ $^ -lcrypto
+	$(CC) $(CFLAGS) -o $@ $^ -lcrypto -lpthread
 
 src/%.o: src/%.c
 	$(CC) $(CFLAGS) -c $< -o $@
@@ -39,13 +39,13 @@ test: $(TEST_BINS)
 	test $$failed -eq 0
 
 tests/test_hash: tests/test_hash.c src/hash.o
-	$(CC) $(CFLAGS) -Isrc -Itests -o $@ $^ -lcrypto
+	$(CC) $(CFLAGS) -Isrc -Itests -o $@ $^ -lcrypto -lpthread
 
 tests/test_snapshot: tests/test_snapshot.c src/hash.o src/snapshot.o
-	$(CC) $(CFLAGS) -Isrc -Itests -o $@ $^ -lcrypto
+	$(CC) $(CFLAGS) -Isrc -Itests -o $@ $^ -lcrypto -lpthread
 
 tests/test_diff: tests/test_diff.c src/hash.o src/snapshot.o src/diff.o
-	$(CC) $(CFLAGS) -Isrc -Itests -o $@ $^ -lcrypto
+	$(CC) $(CFLAGS) -Isrc -Itests -o $@ $^ -lcrypto -lpthread
 
 # ---- Install / Uninstall -------------------------------------------
 install: $(BIN)

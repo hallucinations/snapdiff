@@ -23,7 +23,7 @@ typedef struct {
     int        count;
 } Snapshot;
 
-Snapshot *snapshot_create(const char *dir);
+Snapshot *snapshot_create(const char *dir, const Snapshot *hint);
 Snapshot *snapshot_load(const char *snapfile);
 int       snapshot_save(const Snapshot *snap, const char *snapfile);
 void      snapshot_free(Snapshot *snap);

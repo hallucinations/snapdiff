@@ -5,6 +5,80 @@
 #include <dirent.h>
 #include <sys/stat.h>
 #include <time.h>
+#include <pthread.h>
+#include <stdatomic.h>
+#include <unistd.h>
+
+/* ---- hint table (mtime/size fast-path) ------------------------- */
+
+#define HINT_SIZE 65536u
+
+typedef struct HintNode { const FileEntry *entry; struct HintNode *next; } HintNode;
+typedef struct { HintNode *buckets[HINT_SIZE]; } HintTable;
+
+static unsigned hint_hash(const char *s)
+{
+    unsigned h = 5381;
+    while (*s) h = h * 33 ^ (unsigned char)*s++;
+    return h & (HINT_SIZE - 1);
+}
+
+static HintTable *hint_build(const Snapshot *snap)
+{
+    HintTable *ht = calloc(1, sizeof(*ht));
+    if (!ht) return NULL;
+    for (const FileEntry *e = snap->head; e; e = e->next) {
+        unsigned slot = hint_hash(e->path);
+        HintNode *n = malloc(sizeof(*n));
+        if (!n) continue;
+        n->entry = e;
+        n->next  = ht->buckets[slot];
+        ht->buckets[slot] = n;
+    }
+    return ht;
+}
+
+static const FileEntry *hint_find(const HintTable *ht, const char *path)
+{
+    for (HintNode *n = ht->buckets[hint_hash(path)]; n; n = n->next)
+        if (!strcmp(n->entry->path, path)) return n->entry;
+    return NULL;
+}
+
+static void hint_free(HintTable *ht)
+{
+    for (unsigned i = 0; i < HINT_SIZE; i++) {
+        HintNode *n = ht->buckets[i];
+        while (n) { HintNode *nx = n->next; free(n); n = nx; }
+    }
+    free(ht);
+}
+
+/* ---- parallel hashing ------------------------------------------ */
+
+#define MAX_HASH_THREADS 16
+
+typedef struct {
+    FileEntry  **entries;
+    int          count;
+    atomic_int   next;
+    const char  *root;
+} HashWork;
+
+static void *hash_worker(void *arg)
+{
+    HashWork *w = arg;
+    int i;
+    while ((i = atomic_fetch_add_explicit(&w->next, 1, memory_order_relaxed)) < w->count) {
+        FileEntry *e = w->entries[i];
+        char full[MAX_PATH * 2];
+        snprintf(full, sizeof(full), "%s/%s", w->root, e->path);
+        hash_file(full, e->hash);
+    }
+    return NULL;
+}
+
+/* ---- internal helpers ------------------------------------------ */
 
 static FileEntry *entry_new(void)
 {
@@ -20,7 +94,10 @@ static void snapshot_append(Snapshot *snap, FileEntry *e)
     snap->count++;
 }
 
-static void walk(Snapshot *snap, const char *base, const char *rel)
+/* ---- directory walk -------------------------------------------- */
+
+static void walk(Snapshot *snap, const char *base, const char *rel,
+                 const HintTable *hint)
 {
     char full[MAX_PATH];
     if (*rel)
@@ -49,28 +126,69 @@ static void walk(Snapshot *snap, const char *base, const char *rel)
         if (lstat(child_full, &st) < 0) continue;
 
         if (S_ISDIR(st.st_mode)) {
-            walk(snap, base, child_rel);
+            walk(snap, base, child_rel, hint);
         } else if (S_ISREG(st.st_mode)) {
             FileEntry *e = entry_new();
             snprintf(e->path, MAX_PATH, "%s", child_rel);
             e->size  = st.st_size;
             e->mode  = st.st_mode & 07777;
             e->mtime = st.st_mtime;
-            hash_file(child_full, e->hash);
+
+            if (hint) {
+                const FileEntry *h = hint_find(hint, child_rel);
+                if (h && h->mtime == e->mtime && h->size == e->size)
+                    memcpy(e->hash, h->hash, HASH_HEX_LEN);
+                /* else hash[0] stays '\0': picked up by parallel phase */
+            }
             snapshot_append(snap, e);
         }
     }
     closedir(d);
 }
 
-Snapshot *snapshot_create(const char *dir)
+/* ---- public API ------------------------------------------------- */
+
+Snapshot *snapshot_create(const char *dir, const Snapshot *hint)
 {
     Snapshot *snap = calloc(1, sizeof(*snap));
     if (!snap) { perror("calloc"); exit(1); }
-
     strncpy(snap->root, dir, MAX_PATH - 1);
     snap->created = time(NULL);
-    walk(snap, dir, "");
+
+    HintTable *ht = hint ? hint_build(hint) : NULL;
+    walk(snap, dir, "", ht);
+    if (ht) hint_free(ht);
+
+    /* collect entries still needing a hash */
+    FileEntry **work = NULL;
+    int work_n = 0;
+    if (snap->count > 0) {
+        work = malloc((size_t)snap->count * sizeof(*work));
+        if (!work) { perror("malloc"); exit(1); }
+        for (FileEntry *e = snap->head; e; e = e->next)
+            if (e->hash[0] == '\0')
+                work[work_n++] = e;
+    }
+
+    if (work_n > 0) {
+        int ncpu = (int)sysconf(_SC_NPROCESSORS_ONLN);
+        int nt   = ncpu < 1 ? 1 : ncpu > MAX_HASH_THREADS ? MAX_HASH_THREADS : ncpu;
+        if (nt > work_n) nt = work_n;
+
+        HashWork hw;
+        hw.entries = work;
+        hw.count   = work_n;
+        atomic_init(&hw.next, 0);
+        hw.root    = dir;
+
+        pthread_t tids[MAX_HASH_THREADS];
+        for (int i = 0; i < nt; i++)
+            pthread_create(&tids[i], NULL, hash_worker, &hw);
+        for (int i = 0; i < nt; i++)
+            pthread_join(tids[i], NULL);
+    }
+
+    free(work);
     return snap;
 }
 

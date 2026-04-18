@@ -10,7 +10,7 @@
 #define COLOR_BOLD    "\033[1m"
 #define COLOR_RESET   "\033[0m"
 
-#define HT_SIZE 4096
+#define HT_SIZE 65536
 
 typedef struct HNode {
     FileEntry   *entry;
@@ -23,7 +23,7 @@ static unsigned ht_hash(const char *s)
 {
     unsigned h = 5381;
     while (*s) h = h * 33 ^ (unsigned char)*s++;
-    return h % HT_SIZE;
+    return h & (HT_SIZE - 1);
 }
 
 static HTable *ht_build(const Snapshot *snap)

@@ -61,7 +61,7 @@ static int cmd_snap(int argc, char **argv)
     }
 
     fprintf(stderr, "Scanning %s ...\n", dir);
-    Snapshot *snap = snapshot_create(dir);
+    Snapshot *snap = snapshot_create(dir, NULL);
     fprintf(stderr, "  %d files indexed\n", snap->count);
 
     if (snapshot_save(snap, outfile) < 0) {
@@ -89,7 +89,7 @@ static int cmd_diff(int argc, char **argv)
     if (!old_snap) return 1;
 
     fprintf(stderr, "Scanning %s ...\n", dir);
-    Snapshot *new_snap = snapshot_create(dir);
+    Snapshot *new_snap = snapshot_create(dir, old_snap);
 
     char tstr[64];
     struct tm *tm = localtime(&old_snap->created);

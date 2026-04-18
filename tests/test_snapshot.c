@@ -40,7 +40,7 @@ static void test_create_basic_count(void)
     snprintf(p, sizeof(p), "%s/a.txt", dir); write_file(p, "hello");
     snprintf(p, sizeof(p), "%s/b.txt", dir); write_file(p, "world");
 
-    Snapshot *snap = snapshot_create(dir);
+    Snapshot *snap = snapshot_create(dir, NULL);
     ASSERT(snap != NULL);
     ASSERT_EQ(snap->count, 2);
     ASSERT_STR_EQ(snap->root, dir);
@@ -53,7 +53,7 @@ static void test_create_empty_dir(void)
     char dir[128];
     mkpath(dir, sizeof(dir), "empty");
     make_dir(dir);
-    Snapshot *snap = snapshot_create(dir);
+    Snapshot *snap = snapshot_create(dir, NULL);
     ASSERT(snap != NULL);
     ASSERT_EQ(snap->count, 0);
     ASSERT(snap->head == NULL);
@@ -68,7 +68,7 @@ static void test_create_single_file(void)
     char p[256];
     snprintf(p, sizeof(p), "%s/only.txt", dir);
     write_file(p, "content");
-    Snapshot *snap = snapshot_create(dir);
+    Snapshot *snap = snapshot_create(dir, NULL);
     ASSERT_EQ(snap->count, 1);
     ASSERT(snap->head != NULL);
     ASSERT_STR_EQ(snap->head->path, "only.txt");
@@ -87,7 +87,7 @@ static void test_create_nested(void)
     make_dir(sub);
     snprintf(f, sizeof(f), "%s/root.txt", dir);   write_file(f, "root");
     snprintf(f, sizeof(f), "%s/child.txt", sub);  write_file(f, "child");
-    Snapshot *snap = snapshot_create(dir);
+    Snapshot *snap = snapshot_create(dir, NULL);
     ASSERT_EQ(snap->count, 2);
     ASSERT(find_entry(snap, "root.txt") != NULL);
     ASSERT(find_entry(snap, "sub/child.txt") != NULL);
@@ -104,7 +104,7 @@ static void test_create_deeply_nested(void)
     make_dir(dir); make_dir(a); make_dir(b); make_dir(c);
     char f[512];
     snprintf(f, sizeof(f), "%s/deep.txt", c); write_file(f, "deep");
-    Snapshot *snap = snapshot_create(dir);
+    Snapshot *snap = snapshot_create(dir, NULL);
     ASSERT_EQ(snap->count, 1);
     ASSERT(find_entry(snap, "a/b/c/deep.txt") != NULL);
     snapshot_free(snap);
@@ -117,7 +117,7 @@ static void test_entries_have_correct_size(void)
     make_dir(dir);
     snprintf(p, sizeof(p), "%s/exact.txt", dir);
     write_file(p, "12345678");
-    Snapshot *snap = snapshot_create(dir);
+    Snapshot *snap = snapshot_create(dir, NULL);
     FileEntry *e = find_entry(snap, "exact.txt");
     ASSERT(e != NULL);
     ASSERT_EQ((int)e->size, 8);
@@ -132,7 +132,7 @@ static void test_entries_have_valid_mode(void)
     snprintf(p, sizeof(p), "%s/m.txt", dir);
     write_file(p, "x");
     chmod(p, 0600);
-    Snapshot *snap = snapshot_create(dir);
+    Snapshot *snap = snapshot_create(dir, NULL);
     FileEntry *e = find_entry(snap, "m.txt");
     ASSERT(e != NULL);
     ASSERT_EQ((int)(e->mode & 0777), 0600);
@@ -147,13 +147,13 @@ static void test_file_content_changes_hash(void)
     snprintf(p, sizeof(p), "%s/f.txt", dir);
 
     write_file(p, "version one");
-    Snapshot *s1 = snapshot_create(dir);
+    Snapshot *s1 = snapshot_create(dir, NULL);
     char hash1[HASH_HEX_LEN];
     snprintf(hash1, sizeof(hash1), "%s", s1->head->hash);
     snapshot_free(s1);
 
     write_file(p, "version two");
-    Snapshot *s2 = snapshot_create(dir);
+    Snapshot *s2 = snapshot_create(dir, NULL);
     ASSERT(strcmp(hash1, s2->head->hash) != 0);
     snapshot_free(s2);
 }
@@ -167,7 +167,7 @@ static void test_save_load_roundtrip(void)
     write_file(p, "roundtrip content");
     snprintf(snap_path, sizeof(snap_path), "/tmp/snapdiff_rt_%d.snap", (int)getpid());
 
-    Snapshot *orig = snapshot_create(dir);
+    Snapshot *orig = snapshot_create(dir, NULL);
     ASSERT_EQ(orig->count, 1);
     ASSERT_EQ(snapshot_save(orig, snap_path), 0);
 
@@ -200,7 +200,7 @@ static void test_save_load_multiple_files(void)
     snprintf(p, sizeof(p), "%s/three.txt", dir); write_file(p, "three");
     snprintf(snap_path, sizeof(snap_path), "/tmp/snapdiff_multi_%d.snap", (int)getpid());
 
-    Snapshot *orig = snapshot_create(dir);
+    Snapshot *orig = snapshot_create(dir, NULL);
     ASSERT_EQ(orig->count, 3);
     ASSERT_EQ(snapshot_save(orig, snap_path), 0);
 
@@ -229,7 +229,7 @@ static void test_save_load_preserves_hash(void)
     fclose(fp);
     snprintf(snap_path, sizeof(snap_path), "/tmp/snapdiff_hash_rt_%d.snap", (int)getpid());
 
-    Snapshot *orig = snapshot_create(dir);
+    Snapshot *orig = snapshot_create(dir, NULL);
     snapshot_save(orig, snap_path);
     Snapshot *loaded = snapshot_load(snap_path);
 
@@ -256,7 +256,7 @@ static void test_save_invalid_path(void)
     make_dir(dir);
     snprintf(p, sizeof(p), "%s/x.txt", dir);
     write_file(p, "x");
-    Snapshot *snap = snapshot_create(dir);
+    Snapshot *snap = snapshot_create(dir, NULL);
     ASSERT_EQ(snapshot_save(snap, "/tmp/no/such/dir/out.snap"), -1);
     snapshot_free(snap);
 }
@@ -273,7 +273,7 @@ static void test_created_timestamp_is_recent(void)
     mkpath(dir, sizeof(dir), "ts");
     make_dir(dir);
     time_t before = time(NULL);
-    Snapshot *snap = snapshot_create(dir);
+    Snapshot *snap = snapshot_create(dir, NULL);
     time_t after = time(NULL);
     ASSERT(snap->created >= before);
     ASSERT(snap->created <= after);
