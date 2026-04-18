@@ -10,11 +10,13 @@ SRCS    = src/main.c src/hash.c src/snapshot.c src/diff.c
 OBJS    = $(SRCS:.c=.o)
 BIN     = snapdiff
 
+TEST_BINS = tests/test_hash tests/test_snapshot tests/test_diff
+
 # ---- Default target ------------------------------------------------
 all: $(BIN)
 
 $(BIN): $(OBJS)
-	$(CC) $(CFLAGS) -o $@ $^
+	$(CC) $(CFLAGS) -o $@ $^ -lcrypto
 
 src/%.o: src/%.c
 	$(CC) $(CFLAGS) -c $< -o $@
@@ -24,6 +26,26 @@ src/main.o:     src/main.c     src/snapshot.h src/diff.h
 src/snapshot.o: src/snapshot.c src/snapshot.h src/hash.h
 src/diff.o:     src/diff.c     src/diff.h     src/snapshot.h
 src/hash.o:     src/hash.c     src/hash.h
+
+# ---- Test targets -------------------------------------------------
+test: $(TEST_BINS)
+	@passed=0; failed=0; \
+	for t in $(TEST_BINS); do \
+		if ./$$t; then passed=$$((passed+1)); \
+		else failed=$$((failed+1)); fi; \
+	done; \
+	echo "---"; \
+	echo "$$passed test suite(s) passed, $$failed failed."; \
+	test $$failed -eq 0
+
+tests/test_hash: tests/test_hash.c src/hash.o
+	$(CC) $(CFLAGS) -Isrc -Itests -o $@ $^ -lcrypto
+
+tests/test_snapshot: tests/test_snapshot.c src/hash.o src/snapshot.o
+	$(CC) $(CFLAGS) -Isrc -Itests -o $@ $^ -lcrypto
+
+tests/test_diff: tests/test_diff.c src/hash.o src/snapshot.o src/diff.o
+	$(CC) $(CFLAGS) -Isrc -Itests -o $@ $^ -lcrypto
 
 # ---- Install / Uninstall -------------------------------------------
 install: $(BIN)
@@ -37,9 +59,9 @@ uninstall:
 
 # ---- Housekeeping --------------------------------------------------
 clean:
-	rm -f $(OBJS) $(BIN)
+	rm -f $(OBJS) $(BIN) $(TEST_BINS)
 
 distclean: clean
 	rm -f Makefile
 
-.PHONY: all install uninstall clean distclean
+.PHONY: all test install uninstall clean distclean

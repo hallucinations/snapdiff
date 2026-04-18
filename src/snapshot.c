@@ -116,10 +116,17 @@ Snapshot *snapshot_load(const char *path)
         if (line[0] == '#' || line[0] == '\0') continue;
 
         FileEntry *e = entry_new();
+        char *tab = strchr(line, '\t');
+        if (!tab) { free(e); continue; }
+        size_t pathlen = (size_t)(tab - line);
+        if (pathlen >= MAX_PATH) { free(e); continue; }
+        memcpy(e->path, line, pathlen);
+        e->path[pathlen] = '\0';
+
         long long size; unsigned mode; long mtime;
-        int n = sscanf(line, "%4095s\t%lld\t%o\t%ld\t%64s",
-                       e->path, &size, &mode, &mtime, e->hash);
-        if (n != 5) { free(e); continue; }
+        int n = sscanf(tab + 1, "%lld\t%o\t%ld\t%64s",
+                       &size, &mode, &mtime, e->hash);
+        if (n != 4) { free(e); continue; }
         e->size  = (off_t)size;
         e->mode  = (mode_t)mode;
         e->mtime = (time_t)mtime;
