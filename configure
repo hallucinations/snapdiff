@@ -1,0 +1,87 @@
+#!/bin/sh
+# configure script for snapdiff
+
+set -e
+
+CC=${CC:-gcc}
+PREFIX=${PREFIX:-/usr/local}
+
+# ---- Parse arguments -----------------------------------------------
+for arg in "$@"; do
+    case "$arg" in
+        --prefix=*)   PREFIX="${arg#*=}" ;;
+        --cc=*)       CC="${arg#*=}" ;;
+        --help|-h)
+            cat <<EOF
+Usage: ./configure [OPTIONS]
+
+Options:
+  --prefix=DIR   Install files in DIR [/usr/local]
+  --cc=CC        C compiler to use [gcc]
+  --help         Show this help message
+
+Environment variables:
+  CC             C compiler (overrides --cc)
+  CFLAGS         Extra compiler flags
+EOF
+            exit 0
+            ;;
+        *)
+            echo "configure: unknown option '$arg' (try --help)" >&2
+            exit 1
+            ;;
+    esac
+done
+
+# ---- Check for tools -----------------------------------------------
+check() {
+    printf "Checking for %-20s" "$1 ..."
+    if command -v "$2" >/dev/null 2>&1; then
+        echo "  ok  ($(command -v "$2"))"
+    else
+        echo "  MISSING"
+        echo "configure: error: '$2' not found. $3" >&2
+        exit 1
+    fi
+}
+
+check "C compiler"  "$CC"   "Install gcc or set CC= to your compiler."
+check "make"        "make"  "Install GNU make."
+
+# ---- Check compiler works ------------------------------------------
+printf "Checking if %-20s" "$CC compiles ..."
+tmpdir=$(mktemp -d)
+cat > "$tmpdir/test.c" <<'EOF'
+int main(void) { return 0; }
+EOF
+if $CC -o "$tmpdir/test" "$tmpdir/test.c" 2>/dev/null; then
+    echo "  ok"
+else
+    echo "  FAILED"
+    echo "configure: error: $CC cannot compile a simple program." >&2
+    rm -rf "$tmpdir"
+    exit 1
+fi
+rm -rf "$tmpdir"
+
+# ---- Generate Makefile from Makefile.in ----------------------------
+printf "Generating Makefile ..."
+sed \
+    -e "s|@CC@|$CC|g" \
+    -e "s|@PREFIX@|$PREFIX|g" \
+    -e "s|@EXTRA_CFLAGS@|${CFLAGS:-}|g" \
+    Makefile.in > Makefile
+echo "  done"
+
+# ---- Summary -------------------------------------------------------
+cat <<EOF
+
+Configuration summary:
+  CC      = $CC
+  PREFIX  = $PREFIX
+  CFLAGS  = ${CFLAGS:-<none>}
+
+Build with:
+  make
+  sudo make install
+EOF
