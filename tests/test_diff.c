@@ -10,7 +10,7 @@ static FileEntry *make_entry(const char *path, const char *hash,
                              off_t size, mode_t mode)
 {
     FileEntry *e = calloc(1, sizeof(*e));
-    snprintf(e->path, MAX_PATH, "%s", path);
+    e->path = strdup(path);
     snprintf(e->hash, HASH_HEX_LEN, "%s", hash);
     e->size = size;
     e->mode = mode;
@@ -33,7 +33,7 @@ static Snapshot *make_snap(FileEntry *entries[], int n)
 static void free_snap(Snapshot *s)
 {
     FileEntry *e = s->head;
-    while (e) { FileEntry *nx = e->next; free(e); e = nx; }
+    while (e) { FileEntry *nx = e->next; free(e->path); free(e); e = nx; }
     free(s);
 }
 

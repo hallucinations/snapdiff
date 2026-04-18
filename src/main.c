@@ -3,6 +3,10 @@
 #include <string.h>
 #include <time.h>
 
+#ifndef VERSION
+#define VERSION "unknown"
+#endif
+
 #include "snapshot.h"
 #include "diff.h"
 
@@ -151,6 +155,9 @@ int main(int argc, char **argv)
         return cmd_info(argc - 2, argv + 2);
     if (!strcmp(cmd, "--help") || !strcmp(cmd, "-h")) {
         usage(argv[0]); return 0;
+    }
+    if (!strcmp(cmd, "--version") || !strcmp(cmd, "-V")) {
+        printf("snapdiff %s\n", VERSION); return 0;
     }
 
     fprintf(stderr, "Unknown command: %s\n\n", cmd);

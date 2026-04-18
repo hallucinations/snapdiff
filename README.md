@@ -1,5 +1,9 @@
 # snapdiff
 
+[![CI](https://github.com/hallucinations/snapdiff/actions/workflows/ci.yml/badge.svg)](https://github.com/hallucinations/snapdiff/actions/workflows/ci.yml)
+[![Version](https://img.shields.io/github/v/release/hallucinations/snapdiff?label=version)](https://github.com/hallucinations/snapdiff/releases/latest)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+
 > Take a snapshot of a directory. Come back later. See exactly what changed.
 
 `snapdiff` records the state of every file in a directory tree — paths, sizes,

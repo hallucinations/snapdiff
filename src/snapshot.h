@@ -8,7 +8,7 @@
 #define MAX_PATH 4096
 
 typedef struct FileEntry {
-    char             path[MAX_PATH];
+    char            *path;
     off_t            size;
     mode_t           mode;
     time_t           mtime;

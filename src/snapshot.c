@@ -94,56 +94,73 @@ static void snapshot_append(Snapshot *snap, FileEntry *e)
     snap->count++;
 }
 
-/* ---- directory walk -------------------------------------------- */
+/* ---- iterative directory walk ---------------------------------- */
 
-static void walk(Snapshot *snap, const char *base, const char *rel,
-                 const HintTable *hint)
+typedef struct DirNode { char *rel; struct DirNode *next; } DirNode;
+
+static void walk(Snapshot *snap, const char *base, const HintTable *hint)
 {
-    char full[MAX_PATH];
-    if (*rel)
-        snprintf(full, sizeof(full), "%s/%s", base, rel);
-    else
-        snprintf(full, sizeof(full), "%s", base);
+    DirNode *stack = malloc(sizeof(*stack));
+    if (!stack) { perror("malloc"); exit(1); }
+    stack->rel  = strdup("");
+    stack->next = NULL;
 
-    DIR *d = opendir(full);
-    if (!d) return;
+    while (stack) {
+        DirNode *cur = stack;
+        stack = stack->next;
 
-    struct dirent *de;
-    while ((de = readdir(d))) {
-        if (!strcmp(de->d_name, ".") || !strcmp(de->d_name, ".."))
-            continue;
-
-        char child_rel[MAX_PATH];
+        const char *rel = cur->rel;
+        char full[MAX_PATH * 2];
         if (*rel)
-            snprintf(child_rel, sizeof(child_rel), "%s/%s", rel, de->d_name);
+            snprintf(full, sizeof(full), "%s/%s", base, rel);
         else
-            snprintf(child_rel, sizeof(child_rel), "%s", de->d_name);
+            snprintf(full, sizeof(full), "%s", base);
 
-        char child_full[MAX_PATH * 2];
-        snprintf(child_full, sizeof(child_full), "%s/%s", full, de->d_name);
+        DIR *d = opendir(full);
+        if (!d) { free(cur->rel); free(cur); continue; }
 
-        struct stat st;
-        if (lstat(child_full, &st) < 0) continue;
+        struct dirent *de;
+        while ((de = readdir(d))) {
+            if (!strcmp(de->d_name, ".") || !strcmp(de->d_name, ".."))
+                continue;
 
-        if (S_ISDIR(st.st_mode)) {
-            walk(snap, base, child_rel, hint);
-        } else if (S_ISREG(st.st_mode)) {
-            FileEntry *e = entry_new();
-            snprintf(e->path, MAX_PATH, "%s", child_rel);
-            e->size  = st.st_size;
-            e->mode  = st.st_mode & 07777;
-            e->mtime = st.st_mtime;
+            char child_rel[MAX_PATH];
+            if (*rel)
+                snprintf(child_rel, sizeof(child_rel), "%s/%s", rel, de->d_name);
+            else
+                snprintf(child_rel, sizeof(child_rel), "%s", de->d_name);
 
-            if (hint) {
-                const FileEntry *h = hint_find(hint, child_rel);
-                if (h && h->mtime == e->mtime && h->size == e->size)
-                    memcpy(e->hash, h->hash, HASH_HEX_LEN);
-                /* else hash[0] stays '\0': picked up by parallel phase */
+            char child_full[MAX_PATH * 2];
+            snprintf(child_full, sizeof(child_full), "%s/%s", full, de->d_name);
+
+            struct stat st;
+            if (lstat(child_full, &st) < 0) continue;
+
+            if (S_ISDIR(st.st_mode)) {
+                DirNode *n = malloc(sizeof(*n));
+                if (!n) { perror("malloc"); exit(1); }
+                n->rel  = strdup(child_rel);
+                n->next = stack;
+                stack   = n;
+            } else if (S_ISREG(st.st_mode)) {
+                FileEntry *e = entry_new();
+                e->path  = strdup(child_rel);
+                e->size  = st.st_size;
+                e->mode  = st.st_mode & 07777;
+                e->mtime = st.st_mtime;
+
+                if (hint) {
+                    const FileEntry *h = hint_find(hint, child_rel);
+                    if (h && h->mtime == e->mtime && h->size == e->size)
+                        memcpy(e->hash, h->hash, HASH_HEX_LEN);
+                }
+                snapshot_append(snap, e);
             }
-            snapshot_append(snap, e);
         }
+        closedir(d);
+        free(cur->rel);
+        free(cur);
     }
-    closedir(d);
 }
 
 /* ---- public API ------------------------------------------------- */
@@ -156,7 +173,7 @@ Snapshot *snapshot_create(const char *dir, const Snapshot *hint)
     snap->created = time(NULL);
 
     HintTable *ht = hint ? hint_build(hint) : NULL;
-    walk(snap, dir, "", ht);
+    walk(snap, dir, ht);
     if (ht) hint_free(ht);
 
     /* collect entries still needing a hash */
@@ -237,14 +254,13 @@ Snapshot *snapshot_load(const char *path)
         char *tab = strchr(line, '\t');
         if (!tab) { free(e); continue; }
         size_t pathlen = (size_t)(tab - line);
-        if (pathlen >= MAX_PATH) { free(e); continue; }
-        memcpy(e->path, line, pathlen);
-        e->path[pathlen] = '\0';
+        e->path = strndup(line, pathlen);
+        if (!e->path) { free(e); continue; }
 
         long long size; unsigned mode; long mtime;
         int n = sscanf(tab + 1, "%lld\t%o\t%ld\t%64s",
                        &size, &mode, &mtime, e->hash);
-        if (n != 4) { free(e); continue; }
+        if (n != 4) { free(e->path); free(e); continue; }
         e->size  = (off_t)size;
         e->mode  = (mode_t)mode;
         e->mtime = (time_t)mtime;
@@ -260,6 +276,7 @@ void snapshot_free(Snapshot *snap)
     FileEntry *e = snap->head;
     while (e) {
         FileEntry *next = e->next;
+        free(e->path);
         free(e);
         e = next;
     }

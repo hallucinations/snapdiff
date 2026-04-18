@@ -5,6 +5,7 @@ set -e
 
 CC=${CC:-gcc}
 PREFIX=${PREFIX:-/usr/local}
+VERSION=$(cat VERSION)
 
 # ---- Parse arguments -----------------------------------------------
 for arg in "$@"; do
@@ -22,7 +23,8 @@ Options:
 
 Environment variables:
   CC             C compiler (overrides --cc)
-  CFLAGS         Extra compiler flags
+  CFLAGS         Extra compiler flags (e.g. -I/path/to/openssl/include)
+  LDFLAGS        Extra linker flags   (e.g. -L/path/to/openssl/lib)
 EOF
             exit 0
             ;;
@@ -48,6 +50,28 @@ check() {
 check "C compiler"  "$CC"   "Install gcc or set CC= to your compiler."
 check "make"        "make"  "Install GNU make."
 
+# ---- Check for OpenSSL ---------------------------------------------
+printf "Checking for %-20s" "openssl (libcrypto) ..."
+tmpdir=$(mktemp -d)
+cat > "$tmpdir/test.c" <<'EOF'
+#include <openssl/evp.h>
+int main(void) { EVP_MD_CTX_new(); return 0; }
+EOF
+if $CC ${CFLAGS:-} -o "$tmpdir/test" "$tmpdir/test.c" ${LDFLAGS:-} -lcrypto 2>/dev/null; then
+    echo "  ok"
+else
+    echo "  MISSING"
+    echo "configure: error: OpenSSL not found." >&2
+    echo "  Ubuntu/Debian:  sudo apt-get install libssl-dev" >&2
+    echo "  Fedora/RHEL:    sudo dnf install openssl-devel" >&2
+    echo "  macOS:          brew install openssl" >&2
+    echo "                  then re-run: CFLAGS=-I\$(brew --prefix openssl)/include \\" >&2
+    echo "                               LDFLAGS=-L\$(brew --prefix openssl)/lib ./configure" >&2
+    rm -rf "$tmpdir"
+    exit 1
+fi
+rm -rf "$tmpdir"
+
 # ---- Check compiler works ------------------------------------------
 printf "Checking if %-20s" "$CC compiles ..."
 tmpdir=$(mktemp -d)
@@ -69,7 +93,9 @@ printf "Generating Makefile ..."
 sed \
     -e "s|@CC@|$CC|g" \
     -e "s|@PREFIX@|$PREFIX|g" \
+    -e "s|@VERSION@|$VERSION|g" \
     -e "s|@EXTRA_CFLAGS@|${CFLAGS:-}|g" \
+    -e "s|@EXTRA_LDFLAGS@|${LDFLAGS:-}|g" \
     Makefile.in > Makefile
 echo "  done"
 
@@ -79,7 +105,9 @@ cat <<EOF
 Configuration summary:
   CC      = $CC
   PREFIX  = $PREFIX
+  VERSION = $VERSION
   CFLAGS  = ${CFLAGS:-<none>}
+  LDFLAGS = ${LDFLAGS:-<none>}
 
 Build with:
   make
